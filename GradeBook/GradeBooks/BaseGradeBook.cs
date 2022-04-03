@@ -9,15 +9,18 @@ using Newtonsoft.Json.Linq;
 
 namespace GradeBook.GradeBooks
 {
-    public class BaseGradeBook
+    public abstract class BaseGradeBook
     {
+        public GradeBookType Type { get; set; }
+        public bool IsWeighted { get; set; }
         public string Name { get; set; }
         public List<Student> Students { get; set; }
 
-        public BaseGradeBook(string name)
+        public BaseGradeBook(string name, bool isWeighted)
         {
             Name = name;
             Students = new List<Student>();
+            IsWeighted = isWeighted;
         }
 
         public void AddStudent(Student student)
@@ -82,12 +85,32 @@ namespace GradeBook.GradeBooks
                 return null;
             }
 
+            BaseGradeBook gbType;
+
             using (var file = new FileStream(name + ".gdbk", FileMode.Open, FileAccess.Read))
             {
                 using (var reader = new StreamReader(file))
                 {
                     var json = reader.ReadToEnd();
-                    return ConvertToGradeBook(json);
+
+                    var jobject = JsonConvert.DeserializeObject<JObject>(json);
+
+                    var type = Enum.Parse(typeof(GradeBookType), jobject.GetValue("Type").ToString(),true);
+
+                    switch (type)
+                    {
+                        case GradeBookType.Ranked:
+                            gbType = JsonConvert.DeserializeObject<RankedGradeBook>(json);
+                            break;
+                        case GradeBookType.Standard:
+                            gbType = JsonConvert.DeserializeObject<StandardGradeBook>(json);
+                            break;
+                        default:
+                            gbType = JsonConvert.DeserializeObject<StandardGradeBook>(json);
+                            break;
+                    }
+
+                    return gbType;
                 }
             }
         }
@@ -106,20 +129,28 @@ namespace GradeBook.GradeBooks
 
         public virtual double GetGPA(char letterGrade, StudentType studentType)
         {
+            var gpa = 0;
             switch (letterGrade)
             {
                 case 'A':
-                    return 4;
+                    gpa = 4;
+                    break;
                 case 'B':
-                    return 3;
+                    gpa = 3;
+                    break;
                 case 'C':
-                    return 2;
+                    gpa = 2;
+                    break;
                 case 'D':
-                    return 1;
+                    gpa = 1;
+                    break;
                 case 'F':
-                    return 0;
+                    gpa = 0;
+                    break;
             }
-            return 0;
+            if ((studentType == StudentType.Honors || studentType == StudentType.DualEnrolled) && IsWeighted)
+                gpa++;
+            return gpa;
         }
 
         public virtual void CalculateStatistics()
@@ -234,26 +265,26 @@ namespace GradeBook.GradeBooks
                                  select type).FirstOrDefault();
 
             var jobject = JsonConvert.DeserializeObject<JObject>(json);
-            var gradeBookType = jobject.Property("Type")?.Value?.ToString();
+            var gbTypeType = jobject.Property("Type")?.Value?.ToString();
 
             // Check if StandardGradeBook exists
             if ((from assembly in AppDomain.CurrentDomain.GetAssemblies()
                  from type in assembly.GetTypes()
                  where type.FullName == "GradeBook.GradeBooks.StandardGradeBook"
                  select type).FirstOrDefault() == null)
-                gradeBookType = "Base";
+                gbTypeType = "Base";
             else
             {
-                if (string.IsNullOrEmpty(gradeBookType))
-                    gradeBookType = "Standard";
+                if (string.IsNullOrEmpty(gbTypeType))
+                    gbTypeType = "Standard";
                 else
-                    gradeBookType = Enum.GetName(gradebookEnum, int.Parse(gradeBookType));
+                    gbTypeType = Enum.GetName(gradebookEnum, int.Parse(gbTypeType));
             }
 
             // Get GradeBook from the GradeBook.GradeBooks namespace
             var gradebook = (from assembly in AppDomain.CurrentDomain.GetAssemblies()
                              from type in assembly.GetTypes()
-                             where type.FullName == "GradeBook.GradeBooks." + gradeBookType + "GradeBook"
+                             where type.FullName == "GradeBook.GradeBooks." + gbTypeType + "GradeBook"
                              select type).FirstOrDefault();
 
 
